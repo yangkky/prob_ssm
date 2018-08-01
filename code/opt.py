@@ -57,7 +57,8 @@ def make_perm(V, X, seed=None):
 
     return [V[i] for i in indices] # generate perm based on shuffled indices
 
-def mod_mod(V, fn, g, seed, fn_args=None, g_args=None, fn_kwargs={}, g_kwargs={}):
+def mod_mod(V, fn, g, seed, fn_args=None, g_args=None,
+            fn_kwargs={}, g_kwargs={}, verbose=True):
     """ Implements algorithm3 (ModMod) from paper. Takes in ground set V,
     and functions fn and g.
 
@@ -71,7 +72,8 @@ def mod_mod(V, fn, g, seed, fn_args=None, g_args=None, fn_kwargs={}, g_kwargs={}
     low = mod_lower(X, g, perm, *g_args, **g_kwargs)
     emp = up - low
     obj_lst.append(emp)
-    print('Iteration %d\t obj = %f\t' %(it, emp))
+    if verbose:
+        print('Iteration %d\t obj = %f\t' %(it, emp))
 
     while True:
         it += 1
@@ -95,7 +97,8 @@ def mod_mod(V, fn, g, seed, fn_args=None, g_args=None, fn_kwargs={}, g_kwargs={}
         emp = up - low
         obj_lst.append(emp)
         N = get_N(X_next, 4)
-        print('Iteration %d\t obj = %f' %(it, emp))
+        if verbose:
+            print('Iteration %d\t obj = %f' %(it, emp))
         if obj_lst[-1] == obj_lst[-2]:
             break
         else:
