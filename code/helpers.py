@@ -3,7 +3,7 @@ import numpy as np
 from torch import distributions as dist
 
 import operator
-
+import itertools
 
 from gptorch import kernels, models
 
@@ -18,11 +18,31 @@ def decode_X(X):
     aa_X = [amino_acids[p] for i, p in enumerate(pos_X)] # amino acid chars in X
     return ''.join(aa_X)
 
-def get_predictions(X_train, y_train, X_test, its=500):
+def encode_X(X):
+    """ Takes in a string of four amino acids and encodes it
+    to return a one-hot encoding. """
+    
+    amino_acids = 'ARNDCQEGHILKMFPSTWYV'
+    
+    enc = np.array([0.] * 80)
+    pos_X = [amino_acids.find(char) for char in X] # positions of amino acids
+    for i, pos in enumerate(pos_X):
+        enc[pos + i * 20] = 1.0
+    return enc
+
+def seqs_from_set(chosen, L):
+    """ Takes in a list of tuples representing the library chosen, and
+    the length L of the sequences made from that library. Returns the
+    list of sequences from that library. """
+    
+    pos = [[c[0] for c in chosen if c[1] == p] for p in range(L)]
+    return [''.join(s) for s in itertools.product(*pos)]
+
+def get_predictions(X_train, y_train, X_test, its=500, *args, **kwargs):
     """
     Train GP regressor on X_train and y_train.
     Predict mean and std for X_test.
-    Return P(y > y_train_max) as dictionary eg 'AGHU': 0.78
+    Return P(y > y_train_max) as dictionary eg 'AGHU': 0.78, and predictions (means) as list
     NB: for X_test in X_train, P ~= 0
     Be careful with normalization
 
@@ -38,13 +58,14 @@ def get_predictions(X_train, y_train, X_test, its=500):
     y_train_scaled = (np.array(y_train) - np.mean(np.array(y_train))) / np.std(np.array(y_train)) # scale y_train
     y_train_scaled = torch.Tensor(y_train_scaled.reshape(len(y_train_scaled), 1)).float() # .float()
 
-    his = mo.fit(X_train, y_train_scaled, its=its) # fit model with training set
+    his = mo.fit(X_train, y_train_scaled, its=its, *args, **kwargs) # fit model with training set
 
     # make predictions
     dic = {} # use dictionary to store probs
     ind = 0 # index for feeding in batches of X_test
     tau = y_train_scaled.max().float()
 
+    means = []
     for i in range(1000, len(X_test) + 1000, 1000):
         mu, var = mo.forward(X_test[ind:i]) # make predictions
         std = torch.sqrt(var.diag())
@@ -54,10 +75,34 @@ def get_predictions(X_train, y_train, X_test, its=500):
         for j, p in enumerate(prob):
             seq = decode_X(X_test[ind:i][j]) # decode one-hot to get string of seq
             dic[seq] = p # store prob for each seq
+            means.append(mu[j])
 
         ind = i
 
-    return dic
+    return dic, means
+
+def get_mean_abs_err(X, y, mu, lib):
+    """ Takes in X, true y values, predictions mu, and the sample X's (library) 
+    that the model was trained on, and returns list of abs errors for all y's 
+    not trained on and mean abs error. 
+    
+    Expects X as one-hot encodings, y and mu as lists of floats, and 
+    lib as list of strings of four aa seqs. 
+    
+    Returns a tuple of y_test (does not include y's corresponding to sample X's)
+    and abs errors, and the mean abs error. """
+    
+    str_x = [decode_X(x) for x in X]
+    inds = [i for i, x in enumerate(str_x) if x in lib] # indices of each seq in lib in X
+    
+    y_test = list(y) # remove corresponding y's and mu's of seqs in lib
+    mu_test = mu.copy()
+    for i in inds:
+        y_test.pop(i)
+        mu_test.pop(i)
+    
+    errs = [abs(mu - y).item() for mu, y in zip(mu_test, y_test)]
+    return (y_test, errs), np.mean(np.array(errs))
 
 def generate_V(L):
     """ Returns V: a list of tuples with every possible amino acid

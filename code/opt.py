@@ -67,11 +67,13 @@ def mod_mod(V, fn, g, seed, fn_args=None, g_args=None,
     X = seed
     obj_lst = [] # stores objectives at each time step
     it = 0
+    
     perm = make_perm(V, X) # choose permutation
     up = mod_upper(X, fn, X, *fn_args, **fn_kwargs)
     low = mod_lower(X, g, perm, *g_args, **g_kwargs)
     emp = up - low
     obj_lst.append(emp)
+    
     if verbose:
         print('Iteration %d\t obj = %f\t' %(it, emp))
 
@@ -91,14 +93,17 @@ def mod_mod(V, fn, g, seed, fn_args=None, g_args=None,
                 obj -= mod_lower(X + [i], g, perm, *g_args, **g_kwargs)
                 if obj < emp:
                     X_next.append(i)
+                    
         perm = make_perm(V, X_next) # choose permutation
         up = mod_upper(X_next, fn, X_next, *fn_args, **fn_kwargs)
         low = mod_lower(X_next, g, perm, *g_args, **g_kwargs)
         emp = up - low
         obj_lst.append(emp)
         N = get_N(X_next, 4)
+        
         if verbose:
             print('Iteration %d\t obj = %f' %(it, emp))
+            
         if obj_lst[-1] == obj_lst[-2]:
             break
         else:
@@ -107,6 +112,7 @@ def mod_mod(V, fn, g, seed, fn_args=None, g_args=None,
     return X_next, obj_lst
 
 def get_N(X, L):
+    """ Takes in library X and length L, and computes/returns N. """
     N = 1 # represents the product of sequence of # aas at each position
     counts = Counter([x[1] for x in X])
     for i in range(L):
@@ -121,7 +127,7 @@ def obj_LHS(X, L, probs):
 
     Returns LHS of objective to be maximized (a supermodular function):
     sum of probabilities. """
-
+    
     N = get_N(X, L)
     if N == 0:
         return torch.tensor(0.0)
@@ -131,7 +137,7 @@ def obj_LHS(X, L, probs):
 
     X_str = [[tup[0] for i, tup in enumerate(X) if tup[1] == j] for j in range(4)] # generate list of lists of strings
     X_str = [''.join(s) for s in itertools.product(*X_str)] # generate list of strings of 4 aa seqs
-
+        
     p = torch.Tensor([probs[key] for key in X_str])
 
     return -1 * torch.sum(p)
