@@ -21,9 +21,9 @@ def decode_X(X):
 def encode_X(X):
     """ Takes in a string of four amino acids and encodes it
     to return a one-hot encoding. """
-    
+
     amino_acids = 'ARNDCQEGHILKMFPSTWYV'
-    
+
     enc = np.array([0.] * 80)
     pos_X = [amino_acids.find(char) for char in X] # positions of amino acids
     for i, pos in enumerate(pos_X):
@@ -34,7 +34,7 @@ def seqs_from_set(chosen, L):
     """ Takes in a list of tuples representing the library chosen, and
     the length L of the sequences made from that library. Returns the
     list of sequences from that library. """
-    
+
     pos = [[c[0] for c in chosen if c[1] == p] for p in range(L)]
     return [''.join(s) for s in itertools.product(*pos)]
 
@@ -50,7 +50,7 @@ def get_predictions(X_train, y_train, X_test, its=500, *args, **kwargs):
     """
 
     ke = kernels.MaternKernel()
-    mo = models.GPRegressor(ke)
+    mo = models.GPRegressor(ke, sn=0.5)
 
     # make data into tensors
     X_train = torch.Tensor(X_train)
@@ -82,25 +82,25 @@ def get_predictions(X_train, y_train, X_test, its=500, *args, **kwargs):
     return dic, means
 
 def get_mean_abs_err(X, y, mu, lib):
-    """ Takes in X, true y values, predictions mu, and the sample X's (library) 
-    that the model was trained on, and returns list of abs errors for all y's 
-    not trained on and mean abs error. 
-    
-    Expects X as one-hot encodings, y and mu as lists of floats, and 
-    lib as list of strings of four aa seqs. 
-    
+    """ Takes in X, true y values, predictions mu, and the sample X's (library)
+    that the model was trained on, and returns list of abs errors for all y's
+    not trained on and mean abs error.
+
+    Expects X as one-hot encodings, y and mu as lists of floats, and
+    lib as list of strings of four aa seqs.
+
     Returns a tuple of y_test (does not include y's corresponding to sample X's)
     and abs errors, and the mean abs error. """
-    
+
     str_x = [decode_X(x) for x in X]
     inds = [i for i, x in enumerate(str_x) if x in lib] # indices of each seq in lib in X
-    
+
     y_test = list(y) # remove corresponding y's and mu's of seqs in lib
     mu_test = mu.copy()
     for i in inds:
         y_test.pop(i)
         mu_test.pop(i)
-    
+
     errs = [abs(mu - y).item() for mu, y in zip(mu_test, y_test)]
     return (y_test, errs), np.mean(np.array(errs))
 
