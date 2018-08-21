@@ -123,3 +123,7 @@ def get_seed(probs):
 
     seq = max(probs.items(), key=operator.itemgetter(1))[0]
     return [(aa, i) for aa, i in zip(seq, range(4))]
+
+def seqs_from_set(chosen, L):
+    pos = [[c[0] for c in chosen if c[1] == p] for p in range(L)]
+    return [''.join(s) for s in itertools.product(*pos)]
