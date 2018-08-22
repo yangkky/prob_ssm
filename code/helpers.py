@@ -38,7 +38,7 @@ def seqs_from_set(chosen, L):
     pos = [[c[0] for c in chosen if c[1] == p] for p in range(L)]
     return [''.join(s) for s in itertools.product(*pos)]
 
-def get_predictions(X_train, y_train, X_test, its=500, *args, **kwargs):
+def get_predictions(X_train, y_train, X_test, one_hots=None, lr=1e-1, its=500):
     """
     Train GP regressor on X_train and y_train.
     Predict mean and std for X_test.
@@ -50,7 +50,7 @@ def get_predictions(X_train, y_train, X_test, its=500, *args, **kwargs):
     """
 
     ke = kernels.MaternKernel()
-    mo = models.GPRegressor(ke, sn=0.5)
+    mo = models.GPRegressor(ke, sn=0.1, lr=lr)
 
     # make data into tensors
     X_train = torch.Tensor(X_train)
@@ -58,7 +58,7 @@ def get_predictions(X_train, y_train, X_test, its=500, *args, **kwargs):
     y_train_scaled = (np.array(y_train) - np.mean(np.array(y_train))) / np.std(np.array(y_train)) # scale y_train
     y_train_scaled = torch.Tensor(y_train_scaled.reshape(len(y_train_scaled), 1)).float() # .float()
 
-    his = mo.fit(X_train, y_train_scaled, its=its, *args, **kwargs) # fit model with training set
+    his = mo.fit(X_train, y_train_scaled, its=its) # fit model with training set
 
     # make predictions
     dic = {} # use dictionary to store probs
@@ -66,6 +66,9 @@ def get_predictions(X_train, y_train, X_test, its=500, *args, **kwargs):
     tau = y_train_scaled.max().float()
 
     means = {} # use dictionary to store means
+
+    if one_hots is None:
+        one_hots = X_test
     for i in range(1000, len(X_test) + 1000, 1000):
         mu, var = mo.forward(X_test[ind:i]) # make predictions
         std = torch.sqrt(var.diag())
@@ -73,7 +76,7 @@ def get_predictions(X_train, y_train, X_test, its=500, *args, **kwargs):
         prob = 1 - dist.Normal(mu, std).cdf(tau) # compute probabilities for all means, stds
 
         for j, p in enumerate(prob):
-            seq = decode_X(X_test[ind:i][j]) # decode one-hot to get string of seq
+            seq = decode_X(one_hots[ind:i][j]) # decode one-hot to get string of seq
             dic[seq] = p # store prob for each seq
             means[seq] = mu[j]
 
@@ -123,7 +126,3 @@ def get_seed(probs):
 
     seq = max(probs.items(), key=operator.itemgetter(1))[0]
     return [(aa, i) for aa, i in zip(seq, range(4))]
-
-def seqs_from_set(chosen, L):
-    pos = [[c[0] for c in chosen if c[1] == p] for p in range(L)]
-    return [''.join(s) for s in itertools.product(*pos)]
