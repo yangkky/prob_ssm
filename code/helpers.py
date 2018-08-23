@@ -38,7 +38,8 @@ def seqs_from_set(chosen, L):
     pos = [[c[0] for c in chosen if c[1] == p] for p in range(L)]
     return [''.join(s) for s in itertools.product(*pos)]
 
-def get_predictions(X_train, y_train, X_test, one_hots=None, lr=1e-1, its=500):
+def get_predictions(X_train, y_train, X_test, one_hots=None, lr=1e-1,
+                    its=500, return_model=False):
     """
     Train GP regressor on X_train and y_train.
     Predict mean and std for X_test.
@@ -81,8 +82,10 @@ def get_predictions(X_train, y_train, X_test, one_hots=None, lr=1e-1, its=500):
             means[seq] = mu[j]
 
         ind = i
-
-    return dic, means
+    if return_model:
+        return dic, means, mo
+    else:
+        return dic, means
 
 def get_mean_abs_err(X, y, mu, lib):
     """ Takes in X, true y values, predictions mu, and the sample X's (library)
