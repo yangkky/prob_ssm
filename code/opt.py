@@ -164,3 +164,7 @@ def obj_RHS(X, L, probs, n):
     obj = torch.sum(p) * (1 - 1 / N) ** n
 
     return -1 * obj
+
+# For testing on objective with binomial prob of success term removed
+def obj_RHS_edit(X, L, probs, n):
+    return 0
