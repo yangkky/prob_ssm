@@ -1,18 +1,19 @@
 import itertools
 from collections import Counter
+import multiprocessing as mp
+import operator
 
 import numpy as np
 import torch
 
+import helpers
+
 def mod_lower(X, fn, perm, *args, **kwargs):
     """ Modular lower bound of fn(X) for any X contained in ground set V
-    with permutation chain perm (aka S).
 
     Expects X as a list of tuples, fn as a Python function,
-    and perm as a list.
     """
-    low = 0.0 # lower modular bound
-
+    low = 0.0
     for elem in X:
         i = perm.index(elem)
         low += fn(perm[:i + 1], *args, **kwargs)
@@ -20,151 +21,167 @@ def mod_lower(X, fn, perm, *args, **kwargs):
             low -= fn(perm[:i], *args, **kwargs)
     return low
 
-def mod_upper(X, fn, center, *args, **kwargs):
+def mod_upper(X, fn, center, ground, *args, **kwargs):
     """ Modular upper bound of fn(X) for any X contained in ground set V,
     centered at center.
 
     Expects X and center as lists of tuples, and fn as a Python function. """
 
-    up = fn(center, *args, **kwargs) # modular upper bound
+    f_center = fn(center, *args, **kwargs)
+    f_ground = fn(ground, *args, **kwargs)
+    f_empty = fn([], *args, **kwargs)
+    up1 = fn(center, *args, **kwargs)
+    up2 = fn(center, *args, **kwargs)
 
     for j in center:
         if j not in X:
             center_noj = [x for x in center if x != j]
-            up -= fn(center, *args, **kwargs) - fn(center_noj, *args, **kwargs)
+            up1 -= f_center - fn(center_noj, *args, **kwargs)
+            ground_noj = [x for x in ground if x != j]
+            up2 -= f_ground - fn(ground_noj, *args, **kwargs)
 
     for j in X:
         if j not in center:
-            up += fn([j], *args, **kwargs) - fn([], *args, **kwargs)
+            up1 += fn([j], *args, **kwargs) - f_empty
+            center_union_j = center + [j]
+            up2 += fn(center_union_j, *args, **kwargs) - f_center
+    return up1, up2
 
-    return up
+def _make_permuted_indices(V, X):
+    m = len(X)
+    n = len(V)
 
-def make_perm(V, X, seed=None):
-    """ Takes in the ground set V and a set X, and
-    returns a random chain permutation that contains X """
-    if seed is not None:
-        np.random.seed(seed)
-    if len(X) == 0:
-        indices = list(range(len(V)))
-        np.random.shuffle(indices)
-        return [V[i] for i in indices]
+    X_inds = [V.index(x) for x in X]
+    not_X_inds = [i for i, v in enumerate(V) if v not in X]
 
-    ind_X = [i for i, v in enumerate(V) if v in X] # indices of X in V
-    rest = [i for i in list(range(len(V))) if i not in ind_X] # rest of indices in V
-    np.random.shuffle(ind_X) # shuffle indices
-    np.random.shuffle(rest)
-    indices = ind_X + rest # combine
+    indices = np.array([X_inds + not_X_inds for _ in range(max(n - m, m))])
+    for i in range(max(m, n - m)):
+        indices[i, m - 1], indices[i, i % m] = indices[i, i % m], indices[i, m - 1]
+        np.random.shuffle(indices[i, :m - 1])
+        indices[i, m - 2], indices[i, m - 1] = indices[i, m - 1], indices[i, m - 2]
 
-    return [V[i] for i in indices] # generate perm based on shuffled indices
+        indices[i, m], indices[i, i % (n - m) + m] = indices[i, i % (n - m) + m], indices[i, m]
+        np.random.shuffle(indices[i, m + 1:])
+    # np.random.shuffle(indices[:, m])
+    return indices
 
-def mod_mod(V, fn, g, seed, fn_args=None, g_args=None,
+def _get_candidates(perm, V, X, uppers, obj,
+                  g, g_args, g_kwargs):
+    candidate0 = X[:]
+    candidate1 = X[:]
+    changed0 = False
+    changed1 = False
+    for i, upper in zip(V, uppers):
+        if i in X:
+            X_noi = [x for x in X if x != i]
+            lower = mod_lower(X_noi, g, perm, *g_args, **g_kwargs)
+            if upper[0] - lower < obj:
+                candidate0.remove(i)
+                changed0 = True
+            if upper[1] - lower < obj:
+                candidate1.remove(i)
+                changed1 = True
+        else:
+            lower = mod_lower(X + [i], g, perm, *g_args, **g_kwargs)
+            if upper[0] - lower < obj:
+                candidate0.append(i)
+                changed0 = True
+            if upper[1] - lower < obj:
+                candidate1.append(i)
+                changed1 = True
+    return (candidate0, changed0), (candidate1, changed1)
+
+def mod_mod(V, fn, g, X0, fn_args=None, g_args=None,
             fn_kwargs={}, g_kwargs={}, verbose=True):
-    """ Implements algorithm3 (ModMod) from paper. Takes in ground set V,
-    and functions fn and g.
+    """ Implements algorithm3 (ModMod) from Ilyer and Bilmes (2013).
 
-    Expects V as a list of tuples, and fn and g as submodular Python functions. """
+    Required arguments:
+      V (list): the ground set as a list
+      fn: submodular function; LHS of objective
+      g: submodular function; RHS of objective
+      X0 (list): subset of V to use as starting point for optimization
 
-    X = seed
-    obj_lst = [] # stores objectives at each time step
+    Optional keyword arguments:
+      fn_args (tuple): additional arguments to fn
+      fn_kwargs (dict): keyword arguments to fn
+      g_args (tuple): additional arguments to g
+      g_kwargs (dict): keyword arguments to g
+      verbose (Boolean): Whether to print objective every iteration. Default True.
+    Returns:
+      X_list (list): set at each iteration
+      obj_list (list): objective at each iteration
+    """
+
+    X = X0
+    obj_list = [] # stores objective at each time step
+    X_list = [X]
     it = 0
-    
-    perm = make_perm(V, X) # choose permutation
-    up = mod_upper(X, fn, X, *fn_args, **fn_kwargs)
-    low = mod_lower(X, g, perm, *g_args, **g_kwargs)
-    emp = up - low
-    obj_lst.append(emp)
-    
+
+    up = fn(X, *fn_args, **fn_kwargs)
+    low = g(X, *g_args, **g_kwargs)
+    obj = up - low
+    obj_list.append(obj)
+
     if verbose:
-        print('Iteration %d\t obj = %f\t' %(it, emp))
+        print('Iteration %d\t obj = %f\t' %(it, obj))
 
     while True:
+        perms = _make_permuted_indices(V, X)
+        perms = [[V[i] for i in p] for p in perms]
         it += 1
-        X_next = X[:]
-
+        uppers = []
         for i in V:
             if i in X:
                 X_noi = [x for x in X if x != i]
-                obj = mod_upper(X_noi, fn, X, *fn_args, **fn_kwargs)
-                obj -= mod_lower(X_noi, g, perm, *g_args, **g_kwargs)
-                if obj < emp:
-                    X_next.remove(i)
+                uppers.append(mod_upper(X_noi, fn, X, V, *fn_args, **fn_kwargs))
             else:
-                obj = mod_upper(X + [i], fn, X, *fn_args, **fn_kwargs)
-                obj -= mod_lower(X + [i], g, perm, *g_args, **g_kwargs)
-                if obj < emp:
-                    X_next.append(i)
-                    
-        perm = make_perm(V, X_next) # choose permutation
-        up = mod_upper(X_next, fn, X_next, *fn_args, **fn_kwargs)
-        low = mod_lower(X_next, g, perm, *g_args, **g_kwargs)
-        emp = up - low
-        obj_lst.append(emp)
-        N = get_N(X_next, 4)
-        
-        if verbose:
-            print('Iteration %d\t obj = %f' %(it, emp))
-            
-        if obj_lst[-1] == obj_lst[-2]:
+                uppers.append(mod_upper(X + [i], fn, X, V, *fn_args, **fn_kwargs))
+        with mp.Pool(6) as pool:
+            candidates = [pool.apply_async(_get_candidates, args=(perm, V, X, uppers,
+                                                                  obj_list[-1], g,
+                                                                  g_args, g_kwargs))
+                          for perm in perms]
+            candidates = [c.get() for c in candidates]
+        candidates = list(itertools.chain.from_iterable(candidates))
+        candidates = [c[0] for c in candidates if c[1]]
+        if not candidates:
             break
         else:
+            best = 1e12
+            X_next = None
+            for candidate in candidates:
+                up = fn(candidate, *fn_args, **fn_kwargs)
+                low = g(candidate, *g_args, **g_kwargs)
+                obj = up - low
+                if obj < best:
+                    best = obj
+                    X_next = candidate
+            obj_list.append(best)
+
+            if verbose:
+                print('Iteration %d\t obj = %f' %(it, best))
+
             X = X_next
+            X_list.append(X)
 
-    return X_next, obj_lst
+    return X_list, obj_list
 
-def get_N(X, L):
-    """ Takes in library X and length L, and computes/returns N. """
-    N = 1 # represents the product of sequence of # aas at each position
-    counts = Counter([x[1] for x in X])
-    for i in range(L):
-        N *= counts[i]
-    return N
+def greedy(objective, seed, obj_args=None, obj_kwargs={}):
+    X = seed[:] # library X starts with seed
+    obj = objective(X, *obj_args, **obj_kwargs)
+    aa = helpers.avail_aa(X) # determine available aa at each position of X
 
+    while True:
+        # lst of obj's for lib w each available aa added
+        lst = [objective(X + [a], *obj_args, **obj_kwargs) for a in aa]
 
-def obj_LHS(X, L, probs):
-    """ Takes in library X, and probabilities.
+         # determine which aa minimizes obj
+        index, obj_next = min(enumerate(lst), key=operator.itemgetter(1))
+        if obj_next > obj: # if obj stops decreasing, exit
+            break
+        else:
+            X.append(aa[index]) # add aa that minimizes obj to X
+            obj = obj_next
+            aa.remove(aa[index])
 
-    Expects X to be a list of tuples, and probs to be a dictionary.
-
-    Returns LHS of objective to be maximized (a supermodular function):
-    sum of probabilities. """
-    
-    N = get_N(X, L)
-    if N == 0:
-        return torch.tensor(0.0)
-
-    # filter thru probs to find prob of x's in X
-    X.sort(key=lambda tup: tup[1])
-
-    X_str = [[tup[0] for i, tup in enumerate(X) if tup[1] == j] for j in range(4)] # generate list of lists of strings
-    X_str = [''.join(s) for s in itertools.product(*X_str)] # generate list of strings of 4 aa seqs
-        
-    p = torch.Tensor([probs[key] for key in X_str])
-
-    return -1 * torch.sum(p)
-
-def obj_RHS(X, L, probs, n):
-    """ Takes in library X, probabilities, and batch size n.
-
-    Expects X to be a list of tuples, and probs to be a dictionary.
-
-    Returns RHS of objective to be maximized (a submodular function):
-    sum of probabilities times expression with N and n. """
-
-    N = get_N(X, L)
-    if N == 0:
-        return torch.tensor(0.0)
-
-    # filter thru probs to find prob of x's in X
-    X.sort(key=lambda tup: tup[1])
-
-    X_str = [[tup[0] for i, tup in enumerate(X) if tup[1] == j] for j in range(4)] # generate list of lists of strings
-    X_str = [''.join(s) for s in itertools.product(*X_str)] # generate list of strings of 4 aa seqs
-
-    p = torch.Tensor([probs[key] for key in X_str])
-    obj = torch.sum(p) * (1 - 1 / N) ** n
-
-    return -1 * obj
-
-# For testing on objective with binomial prob of success term removed
-def obj_RHS_edit(X, L, probs, n):
-    return 0
+    return X, obj

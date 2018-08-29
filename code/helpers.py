@@ -4,6 +4,7 @@ from torch import distributions as dist
 
 import operator
 import itertools
+from collections import Counter
 
 from gptorch import kernels, models
 
@@ -129,3 +130,38 @@ def get_seed(probs):
 
     seq = max(probs.items(), key=operator.itemgetter(1))[0]
     return [(aa, i) for aa, i in zip(seq, range(4))]
+
+def get_N(X, L):
+    """ Takes in library X and length L, and returns the library size N. """
+    N = 1 # represents the product of sequence of # aas at each position
+    counts = Counter([x[1] for x in X])
+    for i in range(L):
+        N *= counts[i]
+    return N
+
+def make_perm(V, X, seed=None):
+    """ Takes in the ground set V and a set X, and
+    returns a random chain permutation that contains X """
+    if seed is not None:
+        np.random.seed(seed)
+    if len(X) == 0:
+        indices = list(range(len(V)))
+        np.random.shuffle(indices)
+        return [V[i] for i in indices]
+
+    ind_X = [i for i, v in enumerate(V) if v in X] # indices of X in V
+    rest = [i for i in list(range(len(V))) if i not in ind_X] # rest of indices in V
+    np.random.shuffle(ind_X) # shuffle indices
+    np.random.shuffle(rest)
+    indices = ind_X + rest # combine
+
+    return [V[i] for i in indices] # generate perm based on shuffled indices
+
+def avail_aa(X):
+    """ Takes in a library X and returns a list of tuples of the available amino
+    acids at each position that can be added to the library from V.
+
+    Used for the Greedy algorithm baseline. """
+
+    amino_acids = 'ARNDCQEGHILKMFPSTWYV'
+    return [(aa, i) for i in range(4) for aa in amino_acids if (aa, i) not in X]
