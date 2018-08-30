@@ -166,22 +166,28 @@ def mod_mod(V, fn, g, X0, fn_args=None, g_args=None,
 
     return X_list, obj_list
 
-def greedy(objective, seed, obj_args=None, obj_kwargs={}):
-    X = seed[:] # library X starts with seed
+def get_deltas(objective, a, X, obj_args):
+    A = X[:]
+    if a in X:
+        A.remove(a)
+    else:
+        A.append(a)
+    return objective(A, *obj_args)
+
+def greedy(objective, V, X0, obj_args=None, obj_kwargs={}):
+    X = X0[:] # library X starts with seed
     obj = objective(X, *obj_args, **obj_kwargs)
-    aa = helpers.avail_aa(X) # determine available aa at each position of X
+    converged = False
 
-    while True:
-        # lst of obj's for lib w each available aa added
-        lst = [objective(X + [a], *obj_args, **obj_kwargs) for a in aa]
-
-         # determine which aa minimizes obj
-        index, obj_next = min(enumerate(lst), key=operator.itemgetter(1))
-        if obj_next > obj: # if obj stops decreasing, exit
-            break
+    while not converged:
+        objs = [get_deltas(objective, x, X, obj_args) for x in V]
+        ind = np.argmin(objs)
+        a = V[ind]
+        if a in X:
+            X.remove(a)
         else:
-            X.append(aa[index]) # add aa that minimizes obj to X
-            obj = obj_next
-            aa.remove(aa[index])
-
+            X.append(a)
+        obj_next = min(objs)
+        converged = obj_next > obj
+        obj = obj_next
     return X, obj
