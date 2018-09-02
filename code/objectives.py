@@ -3,6 +3,7 @@ from collections import Counter
 
 import numpy as np
 import torch
+from torch import distributions as dist
 
 import helpers
 
@@ -21,7 +22,7 @@ def obj_LHS(X, L, probs):
     # filter thru probs to find prob of x's in X
     X.sort(key=lambda tup: tup[1])
 
-    X_str = [[tup[0] for i, tup in enumerate(X) if tup[1] == j] for j in range(4)] # generate list of lists of strings
+    X_str = [[tup[0] for i, tup in enumerate(X) if tup[1] == j] for j in range(L)] # generate list of lists of strings
     X_str = [''.join(s) for s in itertools.product(*X_str)] # generate list of strings of 4 aa seqs
 
     p = torch.Tensor([probs[key] for key in X_str])
@@ -70,10 +71,16 @@ def sample_obj(lib, model, tau, seq_to_x, X_all, observed=[],
                 K_chosen = K[rand_inds][:, rand_inds]
                 if len(rand_inds) == 1:
                     sample = dist.Normal(mu_chosen,
-                                         torch.sqrt(K_chosen.squeeze)).sample()
+                                         torch.sqrt(K_chosen.squeeze())).sample()
                 else:
                     sample = dist.MultivariateNormal(mu_chosen, K_chosen).sample()
             num_greater[i] = torch.sum(sample > tau)
+    elif len(unseen_lib) == 1:
+        X_test = torch.tensor(X_all[[seq_to_x[s] for s in unseen_lib]]).float()
+        mu, var = model(X_test)
+        std = torch.sqrt(var).detach()
+        mu = mu.detach()
+        num_greater = torch.ones(its) * (1 - dist.Normal(mu, std).cdf(tau))
     if return_all:
         return -torch.mean(num_greater), num_greater
     else:
