@@ -115,6 +115,7 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
     X = X0
     obj_list = [] # stores objective at each time step
     X_list = [X]
+    perm_list = []
     it = 0
 
     up = fn(X, *fn_args, **fn_kwargs)
@@ -128,6 +129,7 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
     while True:
         perms = _make_permuted_indices(V, X)
         perms = [[V[i] for i in p] for p in perms]
+        perm_list.append(perms)
         it += 1
         uppers = []
         for i in V:
@@ -164,7 +166,7 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
             X = X_next
             X_list.append(X)
 
-    return X_list, obj_list
+    return X_list, obj_list, perm_list
 
 def greedy(V, X0, objective, depth, obj_args=[], obj_kwargs={}):
     X = X0[:] # library X starts with seed
