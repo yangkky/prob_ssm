@@ -40,7 +40,7 @@ def seqs_from_set(chosen, L):
     return [''.join(s) for s in itertools.product(*pos)]
 
 def get_predictions(X_train, y_train, X_test, one_hots=None, lr=1e-1,
-                    its=500, return_model=False):
+                    sn=0.1, its=500, return_model=False):
     """
     Train GP regressor on X_train and y_train.
     Predict mean and std for X_test.
@@ -52,7 +52,7 @@ def get_predictions(X_train, y_train, X_test, one_hots=None, lr=1e-1,
     """
 
     ke = kernels.MaternKernel()
-    mo = models.GPRegressor(ke, sn=0.1, lr=lr)
+    mo = models.GPRegressor(ke, sn=sn, lr=lr)
 
     # make data into tensors
     X_train = torch.Tensor(X_train)
