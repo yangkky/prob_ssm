@@ -80,7 +80,7 @@ def sample_obj(lib, model, tau, seq_to_x, X_all, observed=[],
         mu, var = model(X_test)
         std = torch.sqrt(var).detach()
         mu = mu.detach()
-        num_greater = torch.ones(its) * (1 - dist.Normal(mu, std).cdf(tau))
+        num_greater = torch.ones(its) * (1 - dist.Normal(mu, std).cdf(tau)) 
     if return_all:
         return -torch.mean(num_greater), num_greater
     else:
