@@ -168,9 +168,11 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
 
     return X_list, obj_list, perm_list
 
-def greedy(V, X0, objective, depth, obj_args=[], obj_kwargs={}):
+def greedy(V, X0, objective, depth, obj_args=[], obj_kwargs={}, return_all=False):
     X = X0[:] # library X starts with seed
+    Xs = [X[:]]
     obj = objective(X, *obj_args, **obj_kwargs)
+    obj_list = [obj]
     doubles = [_ for _ in itertools.product(V, repeat=depth)]
     while True:
         objs = [_get_deltas(objective, double, X, obj_args, obj_kwargs)
@@ -187,7 +189,12 @@ def greedy(V, X0, objective, depth, obj_args=[], obj_kwargs={}):
                 else:
                     X.append(a)
             obj = obj_next
-    return X, obj
+        Xs.append(X[:])
+        obj_list.append(obj)
+    if return_all:
+        return X, obj, Xs, obj_list
+    else:
+        return X, obj
 
 def _get_deltas(objective, aa, X, obj_args, obj_kwargs):
     A = X[:]
