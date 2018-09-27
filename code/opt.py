@@ -45,51 +45,42 @@ def mod_upper(X, fn, center, ground, *args, **kwargs):
             up1 += fn([j], *args, **kwargs) - f_empty
             center_union_j = center + [j]
             up2 += fn(center_union_j, *args, **kwargs) - f_center
-    return up1, up2
+    return min((up1, up2))
 
 def _make_permuted_indices(V, X):
     m = len(X)
     n = len(V)
 
+
     X_inds = [V.index(x) for x in X]
     not_X_inds = [i for i, v in enumerate(V) if v not in X]
 
     indices = np.array([X_inds + not_X_inds for _ in range(max(n - m, m))])
+
     for i in range(max(m, n - m)):
         indices[i, m - 1], indices[i, i % m] = indices[i, i % m], indices[i, m - 1]
         np.random.shuffle(indices[i, :m - 1])
-        indices[i, m - 2], indices[i, m - 1] = indices[i, m - 1], indices[i, m - 2]
-
         indices[i, m], indices[i, i % (n - m) + m] = indices[i, i % (n - m) + m], indices[i, m]
         np.random.shuffle(indices[i, m + 1:])
-    # np.random.shuffle(indices[:, m])
     return indices
 
 def _get_candidates(perm, V, X, uppers, obj,
                   g, g_args, g_kwargs):
-    candidate0 = X[:]
-    candidate1 = X[:]
-    changed0 = False
-    changed1 = False
+    candidate = X[:]
+    changed = False
     for i, upper in zip(V, uppers):
         if i in X:
             X_noi = [x for x in X if x != i]
             lower = mod_lower(X_noi, g, perm, *g_args, **g_kwargs)
-            if upper[0] - lower < obj:
-                candidate0.remove(i)
-                changed0 = True
-            if upper[1] - lower < obj:
-                candidate1.remove(i)
-                changed1 = True
+            if upper - lower < obj:
+                candidate.remove(i)
+                changed = True
         else:
             lower = mod_lower(X + [i], g, perm, *g_args, **g_kwargs)
-            if upper[0] - lower < obj:
-                candidate0.append(i)
-                changed0 = True
-            if upper[1] - lower < obj:
-                candidate1.append(i)
-                changed1 = True
-    return (candidate0, changed0), (candidate1, changed1)
+            if upper - lower < obj:
+                candidate.append(i)
+                changed = True
+    return (candidate, changed)
 
 def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
             fn_kwargs={}, g_kwargs={}, verbose=True):
@@ -138,18 +129,18 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
                 uppers.append(mod_upper(X_noi, fn, X, V, *fn_args, **fn_kwargs))
             else:
                 uppers.append(mod_upper(X + [i], fn, X, V, *fn_args, **fn_kwargs))
+
         with mp.Pool(6) as pool:
             candidates = [pool.apply_async(_get_candidates, args=(perm, V, X, uppers,
                                                                   obj_list[-1], g,
                                                                   g_args, g_kwargs))
                           for perm in perms]
             candidates = [c.get() for c in candidates]
-        candidates = list(itertools.chain.from_iterable(candidates))
         candidates = [c[0] for c in candidates if c[1]]
         if not candidates:
             break
         else:
-            best = 1e12
+            best = obj_list[-1]
             X_next = None
             for candidate in candidates:
                 up = fn(candidate, *fn_args, **fn_kwargs)
@@ -166,14 +157,16 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
             X = X_next
             X_list.append(X)
 
-    return X_list, obj_list, perm_list
+    return X_list, obj_list, perm_list, perms
 
 def greedy(V, X0, objective, depth, obj_args=[], obj_kwargs={}, return_all=False):
     X = X0[:] # library X starts with seed
     Xs = [X[:]]
     obj = objective(X, *obj_args, **obj_kwargs)
     obj_list = [obj]
-    doubles = [_ for _ in itertools.product(V, repeat=depth)]
+    doubles = [[_ for _ in itertools.product(V, repeat=d)]
+               for d in range(1, depth + 1)]
+    doubles = list(itertools.chain.from_iterable(doubles))
     while True:
         objs = [_get_deltas(objective, double, X, obj_args, obj_kwargs)
                 for double in doubles]
