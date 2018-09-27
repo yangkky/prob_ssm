@@ -7,6 +7,35 @@ from torch import distributions as dist
 
 import helpers
 
+def ds_lhs(X, L, probs, n, alpha, S):
+    obj = objective(X, L, probs, n)
+    S = torch.tensor(S).double()
+    beta = 2 * torch.sqrt(S - 1) - torch.sqrt(S) - torch.sqrt(S - 2)
+
+    return obj + alpha / beta * torch.sqrt(torch.tensor(len(X)).double())
+
+def ds_rhs(X, alpha, S):
+    S = torch.tensor(S).double()
+    beta = 2 * torch.sqrt(S - 1) - torch.sqrt(S) - torch.sqrt(S - 2)
+    return alpha / beta * torch.sqrt(torch.tensor(len(X)).double())
+
+def ddr(x, n):
+    """ Second derivative of the adjustment for sampling with replacement.
+    """
+    return n * (n - 2 * x + 1) * (1 - 1 / x) ** n / (x - 1) ** 2 / x ** 2
+
+def dc_lhs(X, L, probs, alpha):
+    N = helpers.get_N(X, L)
+    return (1 + alpha / 2 * N ** 2) * obj_LHS(X, L, probs)
+
+def dc_rhs(X, L, probs, n, alpha):
+    lhs = obj_LHS(X, L, probs)
+    N = helpers.get_N(X, L)
+    if N == 0:
+        return torch.tensor(0.0)
+    convex = (1 - 1 / N) ** n + alpha / 2 * N ** 2
+    return lhs * convex
+
 def obj_LHS(X, L, probs):
     """ Takes in library X, and probabilities.
 
@@ -80,7 +109,7 @@ def sample_obj(lib, model, tau, seq_to_x, X_all, observed=[],
         mu, var = model(X_test)
         std = torch.sqrt(var).detach()
         mu = mu.detach()
-        num_greater = torch.ones(its) * (1 - dist.Normal(mu, std).cdf(tau)) 
+        num_greater = torch.ones(its) * (1 - dist.Normal(mu, std).cdf(tau))
     if return_all:
         return -torch.mean(num_greater), num_greater
     else:
