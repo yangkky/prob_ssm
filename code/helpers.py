@@ -58,14 +58,14 @@ def get_predictions(X_train, y_train, X_test, one_hots=None, lr=1e-1,
     X_train = torch.Tensor(X_train)
     X_test = torch.Tensor(np.array(X_test))
     y_train_scaled = (np.array(y_train) - np.mean(np.array(y_train))) / np.std(np.array(y_train)) # scale y_train
-    y_train_scaled = torch.Tensor(y_train_scaled.reshape(len(y_train_scaled), 1)).float() # .float()
+    y_train_scaled = torch.Tensor(y_train_scaled.reshape(len(y_train_scaled), 1)) # .float()
 
     his = mo.fit(X_train, y_train_scaled, its=its) # fit model with training set
 
     # make predictions
     dic = {} # use dictionary to store probs
     ind = 0 # index for feeding in batches of X_test
-    tau = y_train_scaled.max().float()
+    tau = y_train_scaled.max()
 
     means = {} # use dictionary to store means
 
