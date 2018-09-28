@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 import helpers
+import objectives
 
 def mod_lower(X, fn, perm, *args, **kwargs):
     """ Modular lower bound of fn(X) for any X contained in ground set V
@@ -47,21 +48,34 @@ def mod_upper(X, fn, center, ground, *args, **kwargs):
             up2 += fn(center_union_j, *args, **kwargs) - f_center
     return min((up1, up2))
 
-def _make_permuted_indices(V, X):
+def _make_best_permutation(V, X, f, f_args=[], f_kwargs={}):
+    fx = f(X, *f_args, **f_kwargs).item()
+    x_gains = [fx - f([x for x in X if x != j], *f_args, **f_kwargs).item()
+               for j in X]
+    V_not_X = [v for v in V if v not in X]
+    v_gains = [f(X + [j], *f_args, **f_kwargs).item() for j in V_not_X]
+    x_inds = np.argsort(x_gains)#[::-1]
+    x_inds = [V.index(X[i]) for i in x_inds]
+    v_inds = np.argsort(v_gains)[::-1]
+    v_inds = [V.index(V_not_X[i]) for i in v_inds]
+    return x_inds + v_inds
+
+
+
+def _make_permuted_indices(V, X, f, f_args=[], f_kwargs={}):
     m = len(X)
     n = len(V)
-
-
     X_inds = [V.index(x) for x in X]
     not_X_inds = [i for i, v in enumerate(V) if v not in X]
 
-    indices = np.array([X_inds + not_X_inds for _ in range(max(n - m, m))])
+    indices = np.array([_make_best_permutation(V, X, f, f_args=f_args, f_kwargs=f_kwargs)
+                        for _ in range(max(n - m, m))])
 
     for i in range(max(m, n - m)):
         indices[i, m - 1], indices[i, i % m] = indices[i, i % m], indices[i, m - 1]
-        np.random.shuffle(indices[i, :m - 1])
+        # np.random.shuffle(indices[i, :m - 1])
         indices[i, m], indices[i, i % (n - m) + m] = indices[i, i % (n - m) + m], indices[i, m]
-        np.random.shuffle(indices[i, m + 1:])
+        # np.random.shuffle(indices[i, m + 1:])
     return indices
 
 def _get_candidates(perm, V, X, uppers, obj,
@@ -118,7 +132,8 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
         print('Iteration %d\t obj = %f\t' %(it, obj))
 
     while True:
-        perms = _make_permuted_indices(V, X)
+        perms = _make_permuted_indices(V, X, objectives.objective,
+                                       f_args=g_args[:-1], f_kwargs=g_kwargs)
         perms = [[V[i] for i in p] for p in perms]
         perm_list.append(perms)
         it += 1
@@ -139,6 +154,7 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
         candidates = [c[0] for c in candidates if c[1]]
         if not candidates:
             break
+
         else:
             best = obj_list[-1]
             X_next = None
@@ -149,11 +165,9 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
                 if obj < best:
                     best = obj
                     X_next = candidate
-            obj_list.append(best)
-
             if verbose:
                 print('Iteration %d\t obj = %f' %(it, best))
-
+            obj_list.append(best)
             X = X_next
             X_list.append(X)
 
