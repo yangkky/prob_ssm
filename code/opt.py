@@ -70,6 +70,8 @@ def _make_permuted_indices(V, X, f, f_args=[], f_kwargs={}):
 
     indices = np.array([_make_best_permutation(V, X, f, f_args=f_args, f_kwargs=f_kwargs)
                         for _ in range(max(n - m, m))])
+    if m == 0 or m == n:
+        return indices
 
     for i in range(max(m, n - m)):
         indices[i, m - 1], indices[i, i % m] = indices[i, i % m], indices[i, m - 1]
