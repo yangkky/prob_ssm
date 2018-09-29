@@ -98,8 +98,7 @@ def _get_candidates(perm, V, X, uppers, obj,
                 changed = True
     return (candidate, changed)
 
-def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
-            fn_kwargs={}, g_kwargs={}, verbose=True):
+def mod_mod(V, X0, objective, args=[], dec='dc', alpha=None, beta=None, verbose=True):
     """ Implements algorithm3 (ModMod) from Ilyer and Bilmes (2013).
 
     Required arguments:
@@ -124,18 +123,27 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
     X_list = [X]
     perm_list = []
     it = 0
-
-    up = fn(X, *fn_args, **fn_kwargs)
-    low = g(X, *g_args, **g_kwargs)
-    obj = up - low
+    obj = objective(X, *args)
     obj_list.append(obj)
 
     if verbose:
         print('Iteration %d\t obj = %f\t' %(it, obj))
 
+    left_kwargs = {
+            'alpha':alpha,
+            'beta':beta,
+            'side':'left',
+            'dec':dec
+        }
+    right_kwargs = {
+            'alpha': alpha,
+            'beta': beta,
+            'side': 'right',
+            'dec': dec
+        }
+
     while True:
-        perms = _make_permuted_indices(V, X, objectives.objective,
-                                       f_args=g_args[:-1], f_kwargs=g_kwargs)
+        perms = _make_permuted_indices(V, X, objective, f_args=args)
         perms = [[V[i] for i in p] for p in perms]
         perm_list.append(perms)
         it += 1
@@ -143,14 +151,16 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
         for i in V:
             if i in X:
                 X_noi = [x for x in X if x != i]
-                uppers.append(mod_upper(X_noi, fn, X, V, *fn_args, **fn_kwargs))
+                uppers.append(mod_upper(X_noi, objective, X, V,
+                                        *args, **left_kwargs))
             else:
-                uppers.append(mod_upper(X + [i], fn, X, V, *fn_args, **fn_kwargs))
+                uppers.append(mod_upper(X + [i], objective, X, V,
+                                        *args, **left_kwargs))
 
         with mp.Pool(6) as pool:
             candidates = [pool.apply_async(_get_candidates, args=(perm, V, X, uppers,
-                                                                  obj_list[-1], g,
-                                                                  g_args, g_kwargs))
+                                                                  obj_list[-1], objective,
+                                                                  args, right_kwargs))
                           for perm in perms]
             candidates = [c.get() for c in candidates]
         candidates = [c[0] for c in candidates if c[1]]
@@ -161,9 +171,7 @@ def mod_mod(V, X0, fn, g, fn_args=[], g_args=[],
             best = obj_list[-1]
             X_next = None
             for candidate in candidates:
-                up = fn(candidate, *fn_args, **fn_kwargs)
-                low = g(candidate, *g_args, **g_kwargs)
-                obj = up - low
+                obj = objective(candidate, *args)
                 if obj < best:
                     best = obj
                     X_next = candidate

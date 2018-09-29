@@ -36,13 +36,12 @@ def dc_rhs(X, L, probs, n, alpha):
     convex = (1 - 1 / N) ** n + alpha / 2 * N ** 2
     return lhs * convex
 
-def obj_LHS(X, L, probs):
+def get_sum(X, L, probs):
     """ Takes in library X, and probabilities.
 
     Expects X to be a list of tuples, and probs to be a dictionary.
 
-    Returns LHS of objective to be maximized (a supermodular function):
-    sum of probabilities. """
+    Returns sum of probabilities in probs. """
 
     N = helpers.get_N(X, L)
     if N == 0:
@@ -58,27 +57,37 @@ def obj_LHS(X, L, probs):
 
     return -1 * torch.sum(p)
 
-def obj_RHS(X, L, probs, n):
-    """ Takes in library X, probabilities, and batch size n.
-
-    Expects X to be a list of tuples, and probs to be a dictionary.
-
-    Returns RHS of objective to be maximized (a submodular function):
-    sum of probabilities times expression with N and n. """
-
-    N = helpers.get_N(X, L)
-    if N == 0:
-        return torch.tensor(0.0)
-    return obj_LHS(X, L, probs) * (1 - 1 / N) ** n
-
-
-# For testing on objective with binomial prob of success term removed
-def obj_RHS_edit(X, L, probs, n):
-    return 0
-
-def objective(X, L, probs, n):
+def objective(X, L, probs, n, alpha=None, beta=None, dec=None, side='both'):
     """ Objective (negative of objective to be maximized) to be minimized. """
-    return obj_LHS(X, L, probs) - obj_RHS(X, L, probs, n)
+    if side not in ('left', 'right', 'both'):
+        raise ValueError('side must be left, right or both')
+    if side != 'both' and dec not in ('ds', 'dc'):
+        raise ValueError('dec must be ds or dc')
+    N = helpers.get_N(X, L)
+    T = get_sum(X, L, probs)
+    if side == 'both':
+        if N == 0:
+            return torch.tensor(0.0)
+        else:
+            return T * (1 - (1 - 1 / N) ** n)
+    if side == 'left':
+        if dec == 'ds':
+            if N == 0:
+                obj = torch.tensor(0.0)
+            else:
+                obj = T * (1 - (1 - 1 / N) ** n)
+            return obj + alpha / beta * torch.sqrt(torch.tensor(len(X)).double())
+        if dec == 'dc':
+            return (1 + alpha / 2 * N ** 2) * T
+    if side == 'right':
+        if dec == 'ds':
+            return alpha / beta * torch.sqrt(torch.tensor(len(X)).double())
+        if dec == 'dc':
+            if N == 0:
+                return torch.tensor(0.0)
+            else:
+                return T * ((1 - 1 / N) ** n + alpha / 2 * N ** 2)
+
 
 def sample_obj(lib, model, tau, seq_to_x, X_all, observed=[],
                its=1000, n=100, return_all=False):
