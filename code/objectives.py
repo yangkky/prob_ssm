@@ -63,6 +63,10 @@ def objective(X, L, probs, n, alpha=None, beta=None, dec=None, side='both'):
         raise ValueError('side must be left, right or both')
     if side != 'both' and dec not in ('ds', 'dc'):
         raise ValueError('dec must be ds or dc')
+
+    if side == 'right' and dec == 'ds':
+        return alpha / beta * torch.sqrt(torch.tensor(len(X)).double())
+
     N = helpers.get_N(X, L)
     T = get_sum(X, L, probs)
     if side == 'both':
@@ -80,8 +84,6 @@ def objective(X, L, probs, n, alpha=None, beta=None, dec=None, side='both'):
         if dec == 'dc':
             return (1 + alpha / 2 * N ** 2) * T
     if side == 'right':
-        if dec == 'ds':
-            return alpha / beta * torch.sqrt(torch.tensor(len(X)).double())
         if dec == 'dc':
             if N == 0:
                 return torch.tensor(0.0)
@@ -96,7 +98,7 @@ def sample_obj(lib, model, tau, seq_to_x, X_all, observed=[],
     unseen_lib = np.array(sorted(set(lib) - set(observed)))
     if len(unseen_lib) > 1:
         X_test = torch.tensor(X_all[[seq_to_x[s] for s in unseen_lib]]).float()
-        mu, K = model(X_test)
+        mu, K = model(X_test.double())
 
         for i in range(its):
             rand_inds = np.random.choice(len(lib), n, replace=True)
@@ -115,7 +117,7 @@ def sample_obj(lib, model, tau, seq_to_x, X_all, observed=[],
             num_greater[i] = torch.sum(sample > tau)
     elif len(unseen_lib) == 1:
         X_test = torch.tensor(X_all[[seq_to_x[s] for s in unseen_lib]]).float()
-        mu, var = model(X_test)
+        mu, var = model(X_test.double())
         std = torch.sqrt(var).detach()
         mu = mu.detach()
         num_greater = torch.ones(its) * (1 - dist.Normal(mu, std).cdf(tau))
